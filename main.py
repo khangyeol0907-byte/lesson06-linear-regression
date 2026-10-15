@@ -58,6 +58,17 @@ n_years = len(yearly)
 start_year = int(yearly["연도"].min())
 end_year = int(yearly["연도"].max())
 
+# 최근 20년(끝 연도 기준 20개 달력 연도)만으로 구한 회귀
+RECENT_YEARS = 20
+recent = yearly[yearly["연도"] > end_year - RECENT_YEARS]
+if len(recent) >= 3:
+    xr = recent["연도"].to_numpy(dtype=float)
+    yr = recent["연평균기온"].to_numpy(dtype=float)
+    slope_r, intercept_r = np.polyfit(xr, yr, 1)
+    r_recent = float(np.corrcoef(xr, yr)[0, 1])
+else:
+    slope_r = intercept_r = r_recent = None
+
 # --- 연도 선택 & 예상 기온 ---
 year = st.slider("예상할 연도를 고르세요", min_value=1900, max_value=2100, value=2050)
 pred = slope * year + intercept
@@ -73,10 +84,49 @@ st.markdown(
 )
 
 # --- 요약 정보 ---
-c1, c2, c3 = st.columns(3)
-c1.metric("상관계수 (r)", f"{r:.3f}")
-c2.metric("10년당 변화", f"{slope * 10:+.2f} ℃")
-c3.metric("결정계수 (R²)", f"{r ** 2:.3f}")
+st.markdown(
+    f"""
+    <div style="text-align:center; padding:0.8rem 0 0.4rem 0;">
+      <div style="font-size:1.1rem; color:gray;">회귀 직선의 기울기 (전체 기간)</div>
+      <div style="font-size:3.2rem; font-weight:800; line-height:1.2;">
+        100년에 {slope * 100:+.2f} ℃
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.subheader("기울기 비교: 전체 기간 vs 최근 20년")
+col_all, col_rec = st.columns(2)
+
+with col_all:
+    st.markdown("**전체 기간**")
+    st.metric("100년당 변화", f"{slope * 100:+.2f} ℃")
+    st.caption(
+        f"{start_year}~{end_year}년 · {n_years}개 연도 · 상관계수 r = {r:.3f}"
+    )
+
+with col_rec:
+    st.markdown(f"**최근 {RECENT_YEARS}년**")
+    if slope_r is None:
+        st.warning("최근 20년 구간에 연도가 3개 미만이라 계산할 수 없습니다.")
+    else:
+        diff = (slope_r - slope) * 100
+        st.metric(
+            "100년당 변화",
+            f"{slope_r * 100:+.2f} ℃",
+            delta=f"전체 대비 {diff:+.2f} ℃",
+            delta_color="off",
+        )
+        st.caption(
+            f"{int(recent['연도'].min())}~{int(recent['연도'].max())}년 · "
+            f"{len(recent)}개 연도 · 상관계수 r = {r_recent:.3f}"
+        )
+
+st.caption(
+    "최근 20년은 표본이 적어 기울기가 연도별 변동에 크게 흔들릴 수 있습니다. "
+    "'100년당'은 연간 기울기를 100배 한 값으로, 실제로 100년을 관측한 결과가 아닙니다."
+)
 
 st.info(
     f"회귀 직선은 **{n_years}개** 연도의 자료로 만들었습니다 "
@@ -105,6 +155,17 @@ fig.add_trace(
         line=dict(color="#d62728", width=2),
     )
 )
+if slope_r is not None:
+    rx = np.array([int(recent["연도"].min()), int(recent["연도"].max())])
+    fig.add_trace(
+        go.Scatter(
+            x=rx,
+            y=slope_r * rx + intercept_r,
+            mode="lines",
+            name=f"최근 {RECENT_YEARS}년 회귀 직선",
+            line=dict(color="#2ca02c", width=3, dash="dash"),
+        )
+    )
 fig.add_trace(
     go.Scatter(
         x=[year],
